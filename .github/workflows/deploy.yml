@@ -1,0 +1,71 @@
+name: CI/CD - Build, Push & Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_REPO: ${{ secrets.DOCKERHUB_USERNAME }}/microwebfrwk
+  APP_DIR: /home/ec2-user/concurrent-java-webserver-docker
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set image tags
+        id: vars
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "IMAGE_LATEST=${IMAGE_REPO}:latest" >> $GITHUB_ENV
+          echo "IMAGE_SHA=${IMAGE_REPO}:${SHORT_SHA}" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t "${IMAGE_LATEST}" -t "${IMAGE_SHA}" .
+          docker push "${IMAGE_LATEST}"
+          docker push "${IMAGE_SHA}"
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_REPO,IMAGE_LATEST,IMAGE_SHA,APP_DIR
+          script: |
+            set -e
+
+            echo "Using image ${IMAGE_SHA}"
+
+            cd "${APP_DIR}"
+
+            docker pull "${IMAGE_SHA}"
+
+            export IMAGE_NAME="${IMAGE_SHA}"
+
+            if [ -f docker-compose.swarm.yml ]; then
+              echo "Detected docker-compose.swarm.yml - deploying with Docker Swarm"
+              docker stack deploy -c docker-compose.swarm.yml microwebstack
+            elif [ -f docker-compose.yml ]; then
+              echo "Detected docker-compose.yml - deploying with Docker Compose"
+              docker compose up -d --scale app=5
+            else
+              echo "No docker-compose or swarm file found in ${APP_DIR}"
+              exit 1
+            fi
+

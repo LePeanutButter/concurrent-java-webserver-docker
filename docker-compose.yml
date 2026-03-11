@@ -3,7 +3,7 @@ version: "3.9"
 services:
   app:
     build: .
-    image: microwebfrwk:latest
+    image: ${IMAGE_NAME}
     expose:
       - "8080"
     restart: unless-stopped
