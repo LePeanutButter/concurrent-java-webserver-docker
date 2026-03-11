@@ -57,15 +57,16 @@ In this lab, the project was extended to:
 
 ```mermaid
 flowchart TD
-    A[HTTP Client<br/>Browser / curl] --> B[Port 8000 EC2]
-    B --> C[Nginx (container)]
-    C --> D[(Docker Network)]
-    D --> E1[App (container 1)]
-    D --> E2[App (container 2)]
-    D --> E3[App (container 3)]
+    A["HTTP Client - Browser or curl"] --> B["Port 8000 EC2"]
+    B --> C["Nginx (container)"]
+    C --> D["Docker Network"]
 
-    subgraph App Container
-      E[Java 21 HTTP Server]
+    D --> E1["App container 1"]
+    D --> E2["App container 2"]
+    D --> E3["App container 3"]
+
+    subgraph App_Container
+        E["Java 21 HTTP Server"]
     end
 ```
 
@@ -77,43 +78,48 @@ flowchart TD
 
 ```mermaid
 flowchart TB
+
     subgraph Input
-        M[Main]
-        CFG[ServerConfig]
+        M["Main"]
+        CFG["ServerConfig"]
     end
 
     subgraph IoC
-        AC[ApplicationContext]
-        CS[ControllerScanner]
-        AN1[@RestController]
-        AN2[@GetMapping]
-        AN3[@RequestParam]
+        AC["ApplicationContext"]
+        CS["ControllerScanner"]
+        AN1["RestController annotation"]
+        AN2["GetMapping annotation"]
+        AN3["RequestParam annotation"]
     end
 
-    subgraph Core HTTP
-        HS[HttpServer]
-        CH[ConnectionHandler]
-        HR[HttpRequest]
-        HP[HttpResponse]
-        RR[RouteRegistry]
-        SFH[StaticFileHandler]
+    subgraph Core_HTTP
+        HS["HttpServer"]
+        CH["ConnectionHandler"]
+        HR["HttpRequest"]
+        HP["HttpResponse"]
+        RR["RouteRegistry"]
+        SFH["StaticFileHandler"]
     end
 
     subgraph Controller
-        APP[AppController]
+        APP["AppController"]
     end
 
     M --> CFG
     M --> AC
     M --> HS
+
     AC --> CS
     CS --> APP
+
     APP --> AN1
     APP --> AN2
+
     CH --> HR
     CH --> HP
     CH --> RR
     CH --> SFH
+
     RR --> APP
 ```
 
