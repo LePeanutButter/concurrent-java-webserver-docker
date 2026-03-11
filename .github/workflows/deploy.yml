@@ -8,6 +8,7 @@ on:
 env:
   IMAGE_REPO: ${{ secrets.DOCKERHUB_USERNAME }}/microwebfrwk
   APP_DIR: /home/ec2-user/concurrent-java-webserver-docker
+  REPO_URL: https://github.com/${{ github.repository }}.git
 
 jobs:
   build-and-deploy:
@@ -46,11 +47,26 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: IMAGE_REPO,IMAGE_LATEST,IMAGE_SHA,APP_DIR
+          envs: IMAGE_REPO,IMAGE_LATEST,IMAGE_SHA,APP_DIR,REPO_URL
           script: |
             set -e
 
             echo "Using image ${IMAGE_SHA}"
+
+            # Asegurar git instalado
+            if ! command -v git >/dev/null 2>&1; then
+              sudo dnf install -y git
+            fi
+
+            # Clonar el repositorio si no existe; si existe, hacer pull
+            if [ ! -d "${APP_DIR}/.git" ]; then
+              echo "Cloning repository from ${REPO_URL} into ${APP_DIR}"
+              mkdir -p "$(dirname "${APP_DIR}")"
+              git clone "${REPO_URL}" "${APP_DIR}"
+            else
+              echo "Repository already exists in ${APP_DIR}, pulling latest changes"
+              git -C "${APP_DIR}" pull --ff-only
+            fi
 
             cd "${APP_DIR}"
 
