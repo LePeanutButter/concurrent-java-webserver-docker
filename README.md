@@ -1,785 +1,426 @@
-# Java Annotation-Based REST Framework with IoC Container
+# Concurrent Java Web Server - Docker & CI/CD Lab
 
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
-
-**Escuela Colombiana de Ingeniería Julio Garavito**  
+**Escuela Colombiana de Ingeniería Julio Garavito**
 **Student:** Santiago Botero García
 
-A lightweight annotation-driven Java 21 web framework built from scratch using TCP sockets, featuring a custom IoC container, controller-based routing, and REST API design aligned with the Richardson Maturity Model.
+This lab takes an HTTP micro-framework in Java 21 and brings it into a **concurrent** and **production-ready** environment using:
+
+* Concurrency with **virtual threads** and graceful shutdown.
+* Containerization with **Docker**.
+* Orchestration with **Docker Compose** and **Docker Swarm**.
+* Load balancing with **Nginx**.
+* **CI/CD pipeline with GitHub Actions**, automatically deploying to **AWS EC2** on physical port **8000**.
 
 ## Table of Contents
 
-* [Background](#background)
-* [Architectural Evolution](#architectural-evolution)
-* [Richardson Maturity Model Adoption](#richardson-maturity-model-adoption)
-* [Architecture](#architecture)
-* [controller Package](#controller-package)
-* [ioc Package](#ioc-package)
-* [Core Features](#core-features)
-* [Install](#install)
-* [Usage](#usage)
-* [Project Structure](#project-structure)
-* [Testing](#testing)
-* [AWS Deploment](#aws-deployment)
-* [Screenshots](#screenshots)
-* [Outcome and Learning Results](#outcome-and-learning-results)
+* [Project Overview](#project-overview)
+* [General Architecture](#general-architecture)
+* [Relevant Class Design](#relevant-class-design)
+* [Concurrency and Graceful Shutdown](#concurrency-and-graceful-shutdown)
+* [Containerization with Docker](#containerization-with-docker)
+* [Orchestration with Docker Compose](#orchestration-with-docker-compose)
+* [Orchestration with Docker Swarm](#orchestration-with-docker-swarm)
+* [Nginx as Reverse Proxy and Load Balancer](#nginx-as-reverse-proxy-and-load-balancer)
+* [CI/CD Pipeline with GitHub Actions](#cicd-pipeline-with-github-actions)
+* [Deployment on AWS EC2 (port 8000)](#deployment-on-aws-ec2-port-8000)
+* [Image Generation and Local Execution](#image-generation-and-local-execution)
+* [Visual Evidence (Screenshots)](#visual-evidence-screenshots)
+* [Conclusions](#conclusions)
 
-## Background
+## Project Overview
 
-This project is an evolution of a previously implemented TCP-based HTTP server that:
+The project implements a **lightweight HTTP server** in Java 21 with:
 
-* Opened port 8080 manually.
-* Registered routes using lambda expressions.
-* Served static files.
-* Parsed HTTP requests manually.
+* Route registration via annotations (`@RestController`, `@GetMapping`).
+* Custom IoC container to discover and register controllers.
+* Static file handling.
+* Concurrency using **virtual threads** (one thread per connection).
+* Health endpoint `/health` for container and orchestrator monitoring.
 
-In this new iteration, the same low-level HTTP server infrastructure was reused, but the architectural model was significantly redesigned to resemble a simplified version of the Spring Framework.
+In this lab, the project was extended to:
 
-The primary objective of this version was to:
+* Handle **multiple concurrent requests** with virtual threads.
+* Implement a **graceful server shutdown**.
+* Create a **multi-stage Dockerfile**.
+* Orchestrate multiple replicas with **Docker Compose** and **Docker Swarm**.
+* Add an **Nginx reverse proxy** to balance traffic among replicas.
+* Configure a **CI/CD pipeline** that:
 
-* Replace lambda-based route registration with annotation-driven controllers.
-* Implement a custom Inversion of Control (IoC) container.
-* Introduce metadata-based component scanning via `ControllerScanner`.
-* Apply REST maturity principles using the Richardson Maturity Model.
-* Structure the framework in a layered architecture under `co.edu.escuelaing`.
+  * Builds and publishes the Docker image to Docker Hub.
+  * Connects via SSH to an **AWS EC2** instance.
+  * Automatically deploys using Swarm or Compose.
+  * Exposes the service on physical port **8000**.
 
-This project moves from a minimal HTTP server toward a true micro-framework.
+## General Architecture
 
-## Architectural Evolution
-
-### Previous Version
-
-* Route registration via:
-
-  ```java
-  get("/hello", (req, res) -> "Hello World");
-  ```
-* Manual route registry in `RouteRegistry`.
-* Functional-style endpoint mapping with `RouteHandler`.
-* Flat routing structure.
-* No controller abstraction.
-
-### Current Version
-
-* Annotation-based controllers using `@RestController` and `@GetMapping`.
-* Automatic component scanning via `ControllerScanner` (recursive classpath scan).
-* Reflection-based method invocation in `ApplicationContext`.
-* IoC container (`ApplicationContext`) for controller instantiation and route registration.
-* Separation of concerns with a dedicated `controller` package.
-* REST endpoints organized with resource-oriented paths (e.g. `/greeting`, `/math/constants/pi`).
-
-The framework mimics core Spring concepts, including:
-
-* `@RestController`
-* `@GetMapping`
-* `@RequestParam`
-* Annotation metadata processing at runtime
-* Controller instantiation and route registration via the IoC container
-
-All annotations and the IoC logic were manually implemented (no Spring dependency).
-
-## Richardson Maturity Model Adoption
-
-The API design follows the Richardson Maturity Model:
-
-### Level 0 – Single Endpoint
-
-Previously, all services were flat and not resource-oriented.
-
-### Level 1 – Resource-Based URIs
-
-Endpoints are now structured around resources:
-
-```
-/greeting
-/greeting?name=Santiago
-/math/constants/pi
-```
-
-Paths like `/math/constants/pi` reflect hierarchical resource identification.
-
-### Level 2 – HTTP Method Awareness
-
-The framework differentiates requests by HTTP method. Currently, **GET** is supported via:
-
-* `@GetMapping` annotation on controller methods
-* `RouteRegistry` for GET routes only
-* `ConnectionHandler` resolving GET requests through `RouteRegistry.findGetRoute()`
-
-POST, PUT, and DELETE are not yet implemented.
-
-### Level 3 – Hypermedia (Future)
-
-The current design returns plain text. Hypermedia and HATEOAS patterns are envisioned as future extensions.
-
-## Architecture
-
-### High-Level Architecture
+### High-Level Diagram
 
 ```mermaid
 flowchart TD
-    A[Main] --> B[configureRoutes]
-    A --> C[startServer]
-    B --> D[RouteRegistry.staticfiles]
-    B --> E[ApplicationContext]
-    E --> F[ControllerScanner]
-    E --> G[instantiateAndRegister]
-    G --> H[RouteRegistry.get]
-    C --> I[HttpServer]
-    I --> J[ConnectionHandler]
-    J --> K[RouteRegistry.findGetRoute]
-    J --> L[StaticFileHandler]
+    A[HTTP Client<br/>Browser / curl] --> B[Port 8000 EC2]
+    B --> C[Nginx (container)]
+    C --> D[(Docker Network)]
+    D --> E1[App (container 1)]
+    D --> E2[App (container 2)]
+    D --> E3[App (container 3)]
+
+    subgraph App Container
+      E[Java 21 HTTP Server]
+    end
 ```
 
-### Package-Level Architecture
+* Port **8000** is published externally (EC2 Security Group).
+* Nginx receives requests and **distributes them among multiple Java service replicas**.
+* Each replica runs the HTTP server with virtual threads, handling many simultaneous connections.
+
+### Class Architecture (Framework Core)
 
 ```mermaid
 flowchart TB
-    subgraph Main
-        M[Main.java]
+    subgraph Input
+        M[Main]
+        CFG[ServerConfig]
     end
 
-    subgraph controller
-        AC[AppController]
+    subgraph IoC
+        AC[ApplicationContext]
+        CS[ControllerScanner]
+        AN1[@RestController]
+        AN2[@GetMapping]
+        AN3[@RequestParam]
     end
 
-    subgraph ioc
-        subgraph annotations
-            RC[RestController]
-            GM[GetMapping]
-            RP[RequestParam]
-        end
-        subgraph container
-            APPC[ApplicationContext]
-            CS[ControllerScanner]
-        end
-    end
-
-    subgraph config
-        SC[ServerConfig]
-    end
-
-    subgraph server
+    subgraph Core HTTP
         HS[HttpServer]
         CH[ConnectionHandler]
-    end
-
-    subgraph handlers
+        HR[HttpRequest]
+        HP[HttpResponse]
         RR[RouteRegistry]
-        RH[RouteHandler]
         SFH[StaticFileHandler]
     end
 
-    M --> RR
-    M --> APPC
+    subgraph Controller
+        APP[AppController]
+    end
+
+    M --> CFG
+    M --> AC
     M --> HS
-    APPC --> CS
-    APPC --> RR
-    CS --> AC
+    AC --> CS
+    CS --> APP
+    APP --> AN1
+    APP --> AN2
+    CH --> HR
+    CH --> HP
     CH --> RR
     CH --> SFH
+    RR --> APP
 ```
 
-### Request Flow
+## Relevant Class Design
 
-1. `Main.main()` calls `configureRoutes()` and `startServer()`.
-2. `ApplicationContext.loadControllers()` creates a `ControllerScanner`, scans the base package for `@RestController` classes, instantiates them, and registers each `@GetMapping` method in `RouteRegistry`.
-3. `HttpServer` listens on port 8080 and delegates each connection to `ConnectionHandler`.
-4. `ConnectionHandler` parses the request, checks `RouteRegistry.findGetRoute(path)` for GET requests, or falls back to `StaticFileHandler`.
-5. For matched routes, the registered `RouteHandler` (a lambda delegating to the controller method) is invoked via reflection.
+### `HttpServer`
 
-## controller Package
+* Accepts TCP connections on the configured port (default 8080 inside the container).
+* Uses `Executors.newVirtualThreadPerTaskExecutor()` to handle each connection in an independent **virtual thread**.
+* Exposes:
 
-**Location:** `src/main/java/co/edu/escuelaing/controller/`
+  * `start()`: starts the connection acceptance loop.
+  * `stop()`: sets `running = false`, closes the `ServerSocket`, allowing a **graceful shutdown**.
 
-**Purpose:** Contains REST controllers-Java classes annotated with `@RestController` that expose HTTP GET endpoints through `@GetMapping` methods.
+### `ConnectionHandler`
 
-Controllers must:
+* Implements `Runnable` and processes a single HTTP connection.
+* Reads the request, constructs `HttpRequest`, resolves routes in `RouteRegistry`, and writes the response via `HttpResponse`.
+* If a route is missing, delegates to `StaticFileHandler` to serve static files.
+* Always closes the `Socket` in a `finally` block, freeing resources even during shutdown.
+* Normal shutdown exceptions (`Closed by interrupt`, closed socket) are treated as **informational**, not errors.
 
-* Reside under the base package `co.edu.escuelaing` (or a subpackage) so `ControllerScanner` can discover them.
-* Be annotated with `@RestController`.
-* Define methods annotated with `@GetMapping(value = "/path")` that return `String`.
-* Use `@RequestParam` for query parameters; methods with no parameters are also supported.
+### `Main`
 
-### AppController (Actual Implementation)
+* Configures:
 
-```java
-package co.edu.escuelaing.controller;
+  * Static files folder.
+  * Controller scanning (`ApplicationContext`).
+* Starts the server in a dedicated thread and registers a **shutdown hook**:
 
-import co.edu.escuelaing.ioc.annotations.GetMapping;
-import co.edu.escuelaing.ioc.annotations.RequestParam;
-import co.edu.escuelaing.ioc.annotations.RestController;
+  * On `SIGINT` (Ctrl+C or `docker stop`), calls `server.stop()` and waits for the main server thread to finish.
 
-@RestController
-public class AppController {
+### `AppController`
 
-    @GetMapping("/greeting")
-    public String greeting(@RequestParam(value = "name", defaultValue = "World") String name) {
-        return "Hola " + name;
-    }
+* Example controller with routes:
 
-    @GetMapping("/math/constants/pi")
-    public String getPi() {
-        return String.valueOf(Math.PI);
-    }
-}
-```
+  * `GET /greeting`
+  * `GET /math/constants/pi`
+  * `GET /health` → returns `"OK"` and serves as a **healthcheck endpoint** for Docker and Swarm.
 
-## ioc Package
+## Concurrency and Graceful Shutdown
 
-**Location:** `src/main/java/co/edu/escuelaing/ioc/`
+### Concurrency with Virtual Threads
 
-**Purpose:** Provides the Inversion of Control mechanism-custom annotations and the IoC container that scans, instantiates, and registers controllers automatically.
+* The server creates an `ExecutorService` with `Executors.newVirtualThreadPerTaskExecutor()`.
+* Each accepted connection is delegated to a `ConnectionHandler` in a new virtual thread.
+* This allows handling **thousands of concurrent connections** with minimal resource usage, ideal for containerized environments.
 
-### Structure
+### Graceful Shutdown
 
-```
-ioc/
-├── annotations/
-│   ├── RestController.java   # Marks a class as a REST controller
-│   ├── GetMapping.java       # Binds an HTTP GET path to a method
-│   └── RequestParam.java     # Binds a query parameter with optional defaultValue
-└── container/
-    ├── ApplicationContext.java   # IoC container; loads controllers and registers routes
-    └── ControllerScanner.java    # Recursive classpath scanner for @RestController classes
-```
+Shutdown flow:
 
-### annotations
+1. `Main` registers a **shutdown hook** that calls `server.stop()`.
+2. `stop()`:
 
-| Annotation      | Target    | Purpose                                                                 |
-|-----------------|-----------|-------------------------------------------------------------------------|
-| `@RestController` | Class     | Marks a class as a REST controller. Used by `ControllerScanner` to discover controllers. |
-| `@GetMapping`     | Method    | Maps an HTTP GET path to a method. The `value` is the route (e.g. `/greeting`). |
-| `@RequestParam`   | Parameter | Binds a query parameter. Supports `value` (param name) and `defaultValue`. Parameters without a value when `defaultValue` is empty cause an error. |
+   * Sets `running = false`.
+   * Closes the `ServerSocket` to unblock `accept()`.
+3. The main loop in `HttpServer.start()` exits when the socket closes, and in the `finally` block:
 
-### container
+   * Calls `shutdownExecutor()` and waits up to 10 seconds for active connections to finish.
+   * Closes remaining resources.
+4. `ConnectionHandler` closes its `Socket` in `finally` and does not log expected shutdown closures as errors.
 
-| Class               | Purpose                                                                 |
-|---------------------|-------------------------------------------------------------------------|
-| `ApplicationContext`| Accepts a base package, creates `ControllerScanner`, instantiates controllers with a default constructor, and registers each `@GetMapping` method in `RouteRegistry`. Resolves `@RequestParam` from `HttpRequest.getValues()`. |
-| `ControllerScanner` | Scans the classpath (file system and JAR) recursively for classes with `@RestController`. Uses `ClassLoader.getResources()` and recursive directory traversal. |
+This way, the server does not forcefully kill connections unless strictly necessary, keeping the shutdown log **clean and readable**.
 
-### Usage in Main
+## Containerization with Docker
 
-```java
-private static void configureRoutes() {
-    RouteRegistry.staticfiles(STATIC_FOLDER);
+### Dockerfile (Multi-Stage Build)
 
-    ApplicationContext context = new ApplicationContext(BASE_PACKAGE);
-    context.loadControllers();
-}
-```
+The `Dockerfile` builds an executable JAR and exposes the server inside the container on port **8080**:
 
-`BASE_PACKAGE` is `"co.edu.escuelaing"`. All controllers under this package (and subpackages) are discovered and registered.
+* **Build Stage** (image `maven:3.9.9-eclipse-temurin-21`):
 
+  * Copies `pom.xml` and downloads dependencies.
+  * Copies `src/` and runs `mvn -DskipTests package`.
+* **Runtime Stage** (lightweight image `eclipse-temurin:21-jre`):
 
-## Core Features
+  * Copies `microwebfrwk-1.0-SNAPSHOT.jar` as `app.jar`.
+  * `EXPOSE 8080`.
+  * Declares a `HEALTHCHECK` using `curl http://localhost:8080/health`.
+  * `ENTRYPOINT ["java", "-jar", "app.jar"]`.
 
-### 1. Custom Annotation System
-
-The framework includes manually implemented annotations:
-
-* `@RestController`
-* `@GetMapping`
-* `@RequestParam`
-
-These annotations are processed via reflection at runtime. There is no `@RequestMapping`; each method defines its full path in `@GetMapping(value)`.
-
-### 2. IoC Container (ApplicationContext)
-
-The custom IoC container:
-
-* Scans the base package for `@RestController` classes via `ControllerScanner`.
-* Instantiates controllers using a no-arg constructor.
-* Registers each `@GetMapping` method in `RouteRegistry` as a GET route.
-* Resolves `@RequestParam` from the incoming `HttpRequest` (query parameters).
-
-This replaces manual `get(path, handler)` calls.
-
-### 3. Controller-Based Routing
-
-Endpoints are declared in controller classes. The actual `AppController` exposes:
-
-* `GET /greeting` - optional `name` query param (default: `"World"`).
-* `GET /math/constants/pi` - returns `Math.PI` as a string.
-
-Routing is path-based and resolved by `RouteRegistry.findGetRoute()` in `ConnectionHandler`.
-
-### 4. Reflection-Based Handler Execution
-
-When a GET request arrives:
-
-1. `ConnectionHandler` parses the request into `HttpRequest`.
-2. `RouteRegistry.findGetRoute(path)` returns the registered `RouteHandler` (lambda).
-3. The lambda invokes the controller method via reflection with parameters resolved from `@RequestParam`.
-4. The method returns a `String`, which is sent back as the response body.
-
-### 5. Static File Support
-
-`RouteRegistry.staticfiles("webroot")` configures static file resolution from `src/main/resources/webroot`. If no GET route matches, `StaticFileHandler` attempts to serve a file (e.g. `index.html`).
-
-## Install
-
-### Requirements
-
-* Java 21+
-* Maven
-* Git
-
-### Build
+### Manual Image Build
 
 ```bash
-mvn clean install
+docker build -t microwebfrwk:latest .
 ```
 
-## Usage
-
-### Run the Server
+Local execution:
 
 ```bash
-mvn exec:java
+docker run --rm -p 8080:8080 microwebfrwk:latest
+curl http://localhost:8080/health
 ```
 
-Or run the main class `co.edu.escuelaing.Main` from your IDE.
+## Orchestration with Docker Compose
 
-Server runs at:
+File: `docker-compose.yml`
 
-```
-http://localhost:8080
-```
+* Service `app`:
 
-### Example REST Calls
+  * `build: .` and `image: ${IMAGE_NAME}` (for pipeline integration).
+  * `expose: "8080"` (internal port).
+  * `restart: unless-stopped`.
+* Service `nginx`:
 
-```
-GET http://localhost:8080/greeting
-GET http://localhost:8080/greeting?name=Santiago
-GET http://localhost:8080/math/constants/pi
-```
+  * Image `nginx:alpine`.
+  * Maps `8000:8000` (public port → Nginx).
+  * Mounts `nginx.conf` as default configuration.
+  * Depends on `app`.
 
-Static files:
-
-```
-http://localhost:8080/index.html
-http://localhost:8080/styles.css
-```
-
-## Project Structure
-
-The project follows Maven conventions with packages under `co.edu.escuelaing`:
-
-```
-.
-├── pom.xml
-├── src
-│   ├── main
-│   │   ├── java
-│   │   │   └── co/edu/escuelaing
-│   │   │       ├── Main.java
-│   │   │       ├── config/
-│   │   │       │   └── ServerConfig.java
-│   │   │       ├── controller/
-│   │   │       │   └── AppController.java
-│   │   │       ├── handlers/
-│   │   │       │   ├── RouteHandler.java
-│   │   │       │   ├── RouteRegistry.java
-│   │   │       │   └── StaticFileHandler.java
-│   │   │       ├── http/
-│   │   │       │   ├── HttpRequest.java
-│   │   │       │   ├── HttpResponse.java
-│   │   │       │   ├── HttpStatus.java
-│   │   │       │   └── MalformedRequestException.java
-│   │   │       ├── ioc/
-│   │   │       │   ├── annotations/
-│   │   │       │   │   ├── GetMapping.java
-│   │   │       │   │   ├── RequestParam.java
-│   │   │       │   │   └── RestController.java
-│   │   │       │   └── container/
-│   │   │       │       ├── ApplicationContext.java
-│   │   │       │       └── ControllerScanner.java
-│   │   │       ├── server/
-│   │   │       │   ├── ConnectionHandler.java
-│   │   │       │   └── HttpServer.java
-│   │   │       └── utils/
-│   │   │           ├── Logger.java
-│   │   │           └── MimeTypeMapper.java
-│   │   └── resources
-│   │       └── webroot
-│   └── test
-│       └── java/co/edu/escuelaing
-├── img
-└── README.md
-```
-
-## Testing
-
-Automated tests validate:
-
-* HTTP request parsing (`HttpRequest`, `HttpResponse`, `HttpStatus`)
-* Query parameter extraction
-* Route registration and resolution (`RouteRegistry`)
-* Static file handling
-* MIME type detection (`MimeTypeMapper`)
-* Error handling (400, 404)
-* `ConnectionHandler` and `HttpServer` integration
-
-Run tests:
+Scaling in development:
 
 ```bash
-mvn test
+IMAGE_NAME=microwebfrwk:latest docker compose up -d --build --scale app=3
 ```
 
-## AWS Deployment
+The app is accessible at:
+`http://localhost:8000/`
 
-The application was deployed to Amazon Web Services using an EC2 virtual machine. The deployment process followed a production-like approach while remaining within AWS Free Tier limits.
+## Orchestration with Docker Swarm
 
-### Deployment Environment
+File: `docker-compose.swarm.yml`
 
-The deployment was performed using:
+* Service `app`:
 
-* **AWS Academy** Learner Lab
-* **Amazon Web Services**
-* **Amazon EC2**
-* Amazon Linux 2023 (default AMI)
-* Free Tier eligible configuration
+  * `image: ${IMAGE_NAME}`.
+  * `ports: "8000:8080"` → external port 8000, internal 8080.
+  * `deploy.replicas: 3`.
+  * Overlay network `app_net`.
 
-### 1. Build the Executable JAR
+Swarm handles **routing mesh**:
 
-The Maven project was packaged into a runnable JAR file:
+* Any request to `http://EC2_IP:8000` is automatically balanced among replicas.
+
+Basic commands:
+
+```bash
+docker swarm init
+export IMAGE_NAME=user/microwebfrwk:<tag>
+docker stack deploy -c docker-compose.swarm.yml microwebstack
+docker service ls
+```
+
+## Nginx as Reverse Proxy and Load Balancer
+
+File: `nginx.conf`
+
+* Defines an `upstream app_backend` pointing to `app:8080`.
+* Acts as **reverse proxy** listening on port `8000`.
+* Docker resolves the name `app` to **all container IPs** in the `app` service, so Nginx can distribute traffic among them.
+
+Summary:
+
+* In Compose: Nginx load balances HTTP traffic to `app` replicas.
+* In Swarm: routing mesh balances at L4, and optionally Nginx can add extra logic (headers, routing, etc.).
+
+## CI/CD Pipeline with GitHub Actions
+
+File: `.github/workflows/deploy.yml`
+
+### Pipeline Flow
+
+1. **Trigger**: every `push` to `main`.
+2. **Build & push**:
+
+   * `actions/checkout` to get the code.
+   * `docker/setup-buildx-action` for optimized builds.
+   * `docker/login-action` to authenticate with Docker Hub using:
+
+     * `DOCKERHUB_USERNAME`
+     * `DOCKERHUB_TOKEN`
+   * Builds the image with two tags:
+
+     * `latest`
+     * `<short_sha>` (short commit SHA)
+   * Pushes both tags.
+3. **Deploy on EC2** (appleboy/ssh-action):
+
+   * Connects via SSH using:
+
+     * `EC2_HOST`
+     * `EC2_USER`
+     * `EC2_SSH_KEY` (PEM private key)
+   * On EC2:
+
+     * Installs `git` if missing.
+     * Clones the repo if missing or does `git pull --ff-only` if exists.
+     * Pulls the new image (`IMAGE_SHA`).
+     * Exports `IMAGE_NAME=${IMAGE_SHA}`.
+     * If `docker-compose.swarm.yml` exists:
+       `docker stack deploy -c docker-compose.swarm.yml microwebstack`
+     * Else, if `docker-compose.yml` exists:
+       `docker compose up -d --scale app=5`.
+
+### Required Secrets
+
+* `DOCKERHUB_USERNAME`
+* `DOCKERHUB_TOKEN`
+* `EC2_HOST`
+* `EC2_USER`
+* `EC2_SSH_KEY`
+
+## Deployment on AWS EC2 (Port 8000)
+
+### Infrastructure
+
+* **Amazon Linux 2023** instance.
+* Docker and `docker compose` plugin installed.
+* Swarm mode initialized (`docker swarm init`) for `docker-compose.swarm.yml`.
+
+### Opening Port 8000
+
+In the EC2 **Security Group**:
+
+* Inbound rule:
+
+  * **Type**: Custom TCP
+  * **Port**: `8000`
+  * **Source**: `0.0.0.0/0` (for testing; restrict in production)
+
+HTTP traffic reaches:
+`http://EC2_PUBLIC_IP:8000/`
+
+The Swarm container maps `8000:8080`, so requests enter through 8000 and route to Java server on 8080 inside each container.
+
+### Final Deployment Flow
+
+1. Developer pushes to `main`.
+2. GitHub Actions builds and publishes the image.
+3. GitHub Actions connects to EC2, updates the repo, and deploys:
+
+   * `docker stack deploy ...` (Swarm) **or**
+   * `docker compose up -d --scale app=5` (Compose).
+4. Service is available at `http://EC2_PUBLIC_IP:8000/`.
+
+## Image Generation and Local Execution
+
+### Build JAR
 
 ```bash
 mvn clean package
 ```
 
-This generated the executable `.jar` inside the `target/` directory.
-
-### 2. EC2 Instance Creation
-
-Inside AWS Academy Learner Lab:
-
-1. A new EC2 instance was launched.
-2. The default Amazon Linux 2023 AMI was selected.
-3. A Free Tier eligible instance type was chosen.
-4. Port **8080** was exposed in the Security Group configuration to allow inbound HTTP traffic.
-5. A key pair was generated for SSH access.
-
-### 3. Install Java 21 (Amazon Corretto)
-
-After connecting via SSH:
+### Build Docker Image
 
 ```bash
-ssh -i webserver-keypair.pem ec2-user@ec2-98-92-119-192.compute-1.amazonaws.com
+docker build -t user/microwebfrwk:latest .
 ```
 
-Java was installed following the official AWS documentation using:
-
-**Amazon Corretto 21**
-
-Example installation:
+### Local Testing with Compose
 
 ```bash
-sudo yum install java-21-amazon-corretto-headless
+export IMAGE_NAME=user/microwebfrwk:latest
+docker compose up -d --build --scale app=3
+
+curl http://localhost:8000/health
+curl http://localhost:8000/greeting
 ```
 
-Verification:
+### Local Testing with Swarm
 
 ```bash
-java -version
+docker swarm init
+export IMAGE_NAME=user/microwebfrwk:latest
+docker stack deploy -c docker-compose.swarm.yml microwebstack
+
+curl http://localhost:8000/health
 ```
 
-### 4. Transfer the JAR File
+## Visual Evidence (Screenshots)
 
-The packaged JAR file was transferred using SFTP:
+Screenshots are in the `img/` directory documenting the final lab state.
 
-```bash
-sftp -i webserver-keypair.pem ec2-user@ec2-98-92-119-192.compute-1.amazonaws.com
-put microwebfrwk.jar
-```
+1. **Concurrent server locally**
 
-### 5. Run the Application
+    ![](img/local-concurrent-server.png)
+    Console showing multiple connections handled in parallel and graceful shutdown logs.
 
-Once uploaded, the application was executed:
+2. **Docker Hub repository**
 
-```bash
-java -jar microwebfrwk.jar
-```
+   ![](img/docker-hub-microwebfrwk.png)
+   Docker Hub page showing the `microwebfrwk` image, available tags, and last updated timestamp.
 
-The embedded HTTP server started on port **8080**.
+3. **Docker Swarm on EC2**
 
-### 6. Accessing the Application
+    ![](img/docker-swarm-services.png)
+    Output of `docker service ls` showing `microwebfrwk` service with multiple replicas.
 
-Using the EC2 public DNS:
+4. **App accessible on AWS (port 8000)**
 
-```
-http://ec2-98-92-119-192.compute-1.amazonaws.com:8080
-```
+    ![](img/aws-browser-8000.png)
+    Browser accessing `http://EC2_PUBLIC_IP:8000/` with main page served correctly.
 
-The following became accessible:
+5. **Health endpoint**
 
-* Static website files
-* REST API endpoints
-* Controller-based routes
-* Resource-oriented endpoints aligned with the Richardson Maturity Model
+    ![](img/aws-health-endpoint.png)
+    Request to `http://EC2_PUBLIC_IP:8000/health` returning `OK`.
 
-Because port 8080 was exposed in the Security Group, external clients could access the server directly via the public DNS.
+6. **Successful GitHub Actions pipeline**
 
-### Deployment Summary
+    ![](img/github-actions-success.png)
+    Pipeline execution completing build, push, and deploy steps correctly.
 
-This deployment demonstrates:
+## Conclusions
 
-* Packaging a Maven-based Java application into a production-ready artifact.
-* Provisioning cloud infrastructure using EC2.
-* Installing a managed OpenJDK distribution (Amazon Corretto 21).
-* Secure file transfer via SFTP.
-* Public exposure of a custom-built TCP-based web framework.
-* Real-world execution outside of local development.
-
-The system now operates as a fully deployed REST framework accessible over the public internet via AWS infrastructure.
-
-## Screenshots
-
-This section contains visual evidence demonstrating the correct functionality of the framework, including local execution, REST endpoint behavior, IoC container integration, static file serving, testing, and AWS deployment.
-
-All screenshots are stored inside the `img/` directory and referenced below.
-
-### 1. Local Server Startup
-
-Demonstrates successful execution of the application locally via:
-
-```bash
-mvn exec:java
-```
-
-The console should show the server listening on port 8080.
-
-![local-server-startup](img/local-server-startup.png)
-
-### 2. Greeting Endpoint (Default Parameter)
-
-Request:
-
-```
-GET http://localhost:8080/greeting
-```
-
-Expected response:
-
-```
-Hola World
-```
-
-![greeting-default](img/greeting-default.png)
-
-### 3. Greeting Endpoint with Query Parameter
-
-Request:
-
-```
-GET http://localhost:8080/greeting?name=Santiago
-```
-
-Expected response:
-
-```
-Hola Santiago
-```
-
-![greeting-with-param](img/greeting-with-param.png)
-
-This screenshot demonstrates:
-
-* Proper query parameter extraction.
-* `@RequestParam` resolution.
-* Reflection-based invocation of the controller method.
-
-### 4. Math Constants Endpoint
-
-Request:
-
-```
-GET http://localhost:8080/math/constants/pi
-```
-
-Expected response:
-
-```
-3.141592653589793
-```
-
-![math-pi-endpoint](img/math-pi-endpoint.png)
-
-This demonstrates hierarchical resource-based URI design (Richardson Level 1).
-
-### 5. Static File Serving
-
-Request:
-
-```
-http://localhost:8080/index.html
-```
-
-![static-index](img/static-index.png)
-
-This confirms:
-
-* `RouteRegistry.staticfiles("webroot")` configuration
-* Fallback to `StaticFileHandler`
-* MIME type resolution via `MimeTypeMapper`
-
-### 6. Automated Test Execution
-
-Execution:
-
-```bash
-mvn test
-```
-
-![maven-tests](img/maven-tests.png)
-
-This screenshot demonstrates:
-
-* HTTP parsing validation
-* Route resolution testing
-* Static file handling tests
-* Integration testing of `ConnectionHandler` and `HttpServer`
-
-### 7. JAR Packaging
-
-Build command:
-
-```bash
-mvn clean package
-```
-
-Resulting artifact inside `out/`:
-
-![jar-build](img/jar-build.png)
-
-This confirms generation of the executable artifact used for deployment.
-
-### 8. AWS EC2 Instance Running
-
-Screenshot of the EC2 instance dashboard showing:
-
-* Running state
-* Public DNS
-* Security Group with port 8080 exposed
-
-![aws-ec2-instance](img/aws-ec2-instance.png)
-
-### 9. Application Running on AWS (Public DNS)
-
-Access via:
-
-```
-http://ec2-98-92-119-192.compute-1.amazonaws.com:8080
-```
-
-![aws-greeting-endpoint](img/aws-index.png)
-
-This confirms:
-
-* Successful deployment
-* Remote execution of the JAR
-* Public internet accessibility
-* Proper exposure of port 8080
-
-### 10. Testing `greetings?name=Santiago` Endpoint
-
-Access via:
-
-```
-http://ec2-98-92-119-192.compute-1.amazonaws.com:8080/greetings?name=Santiago
-```
-
-Expected behavior:
-
-* The application processes the `name` query parameter
-* Returns a personalized greeting message
-* Confirms correct handling of HTTP query parameters
-* Validates controller/service layer functionality
-
-Example response:
-
-```
-Hello Santiago
-```
-
-![aws-greetings-endpoint](img/aws-greetings-santiago.png)
-
-This confirms:
-
-* Query parameter binding works correctly
-* Endpoint routing is functioning
-* The deployed application responds dynamically
-
-### 11. Testing `math/constants/pi` Endpoint
-
-Access via:
-
-```
-http://ec2-98-92-119-192.compute-1.amazonaws.com:8080/math/constants/pi
-```
-
-Expected behavior:
-
-* The endpoint returns the mathematical constant π
-* Confirms static resource/controller mapping
-* Validates additional API route configuration
-
-Example response:
-
-```
-3.141592653589793
-```
-
-![aws-pi-endpoint](img/aws-math-pi.png)
-
-This confirms:
-
-* Additional REST endpoint exposure
-* Correct backend computation/constant retrieval
-* Full API functionality on the deployed AWS EC2 instance
-
-### 12. SSH Session Running the JAR
-
-Terminal session showing:
-
-```bash
-java -jar microwebfrwk.jar
-```
-
-![aws-ssh-running-jar](img/aws-ssh-running-jar.png)
-
-This validates:
-
-* Java 21 installation
-* Execution on Amazon Linux 2023
-* Correct server startup in cloud environment
-
-### Evidence Summary
-
-The screenshots collectively demonstrate:
-
-* Successful local execution.
-* Correct annotation scanning and controller registration.
-* Query parameter resolution.
-* Static file serving.
-* Automated test validation.
-* JAR packaging.
-* Cloud deployment in EC2.
-* Public availability via AWS DNS.
-
-These captures validate the complete lifecycle of the project, from development to production-style deployment.
-
-## Outcome and Learning Results
-
-This project demonstrates:
-
-* Deep understanding of TCP socket programming and HTTP protocol handling.
-* Reflection and annotation metadata processing in Java.
-* Design and implementation of a lightweight IoC container.
-* Annotation-driven programming without external frameworks.
-* How Spring-style controllers and routing are implemented under the hood.
-* REST API modeling with resource-oriented URIs and query parameters.
-
-By reusing the original TCP-based HTTP server and adding annotation-based controllers and an IoC container, the project bridges low-level networking with higher-level, framework-like abstractions.
+* Achieved a Java 21 HTTP server capable of **high concurrency** using virtual threads, maintaining a **graceful and predictable shutdown**.
+* Docker containerization combined with Compose/Swarm and Nginx enables **horizontal scaling** with multiple balanced replicas.
+* GitHub Actions pipeline automates the entire **build → push → deploy** flow, reducing manual errors and delivery times.
+* Deployment on AWS EC2 with port 8000 open demonstrates a near-production environment, with the application publicly accessible and validated via `/health` endpoint and real browser tests.
