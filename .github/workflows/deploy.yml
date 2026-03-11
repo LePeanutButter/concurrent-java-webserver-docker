@@ -53,12 +53,10 @@ jobs:
 
             echo "Using image ${IMAGE_SHA}"
 
-            # Asegurar git instalado
             if ! command -v git >/dev/null 2>&1; then
               sudo dnf install -y git
             fi
 
-            # Clonar el repositorio si no existe; si existe, hacer pull
             if [ ! -d "${APP_DIR}/.git" ]; then
               echo "Cloning repository from ${REPO_URL} into ${APP_DIR}"
               mkdir -p "$(dirname "${APP_DIR}")"
