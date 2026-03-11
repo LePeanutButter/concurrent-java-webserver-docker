@@ -1,0 +1,140 @@
+:root {
+  --bg-dark: #0e0e11;
+  --orange: #ff7a18;
+  --pink: #ff3cac;
+  --white: #f5f5f7;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  height: 100vh;
+  background: var(--bg-dark);
+  color: var(--white);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Grain effect */
+.grain {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+  opacity: 0.05;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Container */
+.container {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  max-width: 600px;
+  animation: fadeIn 1.2s ease forwards;
+  opacity: 0;
+  gap: 1.5rem;
+}
+
+h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--orange), var(--pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1rem;
+}
+
+p {
+  font-weight: 300;
+  font-size: 1.1rem;
+  color: #d0d0d0;
+  margin-bottom: 2rem;
+}
+
+.logo {
+  width: 64px;
+  filter: drop-shadow(0 0 20px rgba(255, 122, 24, 0.3));
+  animation: float 4s ease-in-out infinite;
+}
+
+/* Button */
+button {
+  padding: 0.8rem 1.6rem;
+  border-radius: 40px;
+  border: none;
+  background: linear-gradient(90deg, var(--orange), var(--pink));
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(255, 60, 172, 0.3);
+}
+
+/* Aviso de contenido generado */
+.generated-by {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 1rem;
+    font-weight: 300;
+}
+
+/* Bubbles */
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.bubble1 {
+  width: 300px;
+  height: 300px;
+  background: var(--orange);
+  top: 10%;
+  left: 15%;
+}
+
+.bubble2 {
+  width: 400px;
+  height: 400px;
+  background: var(--pink);
+  bottom: 5%;
+  right: 10%;
+}
+
+.bubble3 {
+  width: 250px;
+  height: 250px;
+  background: linear-gradient(45deg, var(--orange), var(--pink));
+  top: 60%;
+  left: 40%;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
+}

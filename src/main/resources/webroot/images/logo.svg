@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Fondo con degradado cálido -->
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff7a18;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ff3cac;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Fondo redondeado -->
+  <rect width="64" height="64" rx="12" ry="12" fill="url(#grad1)" />
+
+  <!-- Icono minimalista tipo lambda -->
+  <path d="M32 16 L40 48 L32 40 L24 48 Z" fill="white" />
+</svg>
