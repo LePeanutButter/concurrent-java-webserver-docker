@@ -424,6 +424,22 @@ Screenshots are in the `img/` directory documenting the final lab state.
     ![](img/github-actions-success.png)
     Pipeline execution completing build, push, and deploy steps correctly.
 
+## Video Demonstration (External Evidence)
+
+> **Note:** A short video demonstration is available showing the deployed application running on the AWS EC2 instance. In the video, the service is accessed through the **public DNS of the EC2 instance on port 8000**, demonstrating the correct operation of the implemented endpoints.
+
+The video includes:
+
+- Access to the server using the EC2 **public DNS**.
+- Requests executed against the exposed service on **port 8000**.
+- Demonstration of the functionality of the implemented endpoints such as:
+  - `/greeting`
+  - `/math/constants/pi`
+  - `/health`
+
+Video link:  
+`<INSERT VIDEO LINK HERE>`
+
 ## Conclusions
 
 * Achieved a Java 21 HTTP server capable of **high concurrency** using virtual threads, maintaining a **graceful and predictable shutdown**.
